@@ -1,0 +1,22 @@
+# Build intermediates
+bin/
+obj/
+*.tmp
+
+# Local runtime state (the app writes these under %LOCALAPPDATA%,
+# listed here too so they're never committed if run from the source dir)
+history.json
+refresh.log
+.installed
+*.log
+
+# Never commit credentials of any kind
+.credentials.json
+*.credentials.json
+*.pfx
+*.snk
+
+# OS cruft
+Thumbs.db
+desktop.ini
+.DS_Store
