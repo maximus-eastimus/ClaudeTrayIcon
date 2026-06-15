@@ -1,6 +1,7 @@
-# Build intermediates
+# Build intermediates / output
 bin/
 obj/
+publish/
 *.tmp
 
 # Local runtime state (the app writes these under %LOCALAPPDATA%,
