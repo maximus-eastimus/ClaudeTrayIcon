@@ -6,7 +6,7 @@
        The menu items below are placeholders; TrayService repopulates them. -->
   <TrayIcon.Icons>
     <TrayIcons>
-      <TrayIcon x:Name="Tray" IsVisible="True" ToolTipText="Claude Usage — loading…">
+      <TrayIcon IsVisible="True" ToolTipText="Claude Usage — loading…">
         <TrayIcon.Menu>
           <NativeMenu>
             <NativeMenuItem Header="Loading…" IsEnabled="False" />
