@@ -18,7 +18,9 @@ namespace ClaudeTrayIcon
         public string When { get; set; } = "";
         public bool Ok { get; set; }
         public string Code { get; set; } = "";
-        public string Line() => $"{(Ok ? "🟢" : "🔴")}  {Code}   ·   {When}";
+        // ✓/✗ are distinct glyph shapes, so success/failure is distinguishable even
+        // though a Windows tray menu renders text monochrome (color emoji don't draw).
+        public string Line() => $"{(Ok ? "✓" : "✗")}  {Code}   ·   {When}";
     }
 
     internal sealed class Win

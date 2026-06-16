@@ -2,6 +2,7 @@
 bin/
 obj/
 publish/
+wiki-images/
 *.tmp
 
 # Local runtime state (the app writes these under %LOCALAPPDATA%,
