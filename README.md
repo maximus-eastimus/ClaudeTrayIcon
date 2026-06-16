@@ -2,7 +2,7 @@
 
 A lightweight system-tray app that shows your **Claude subscription usage** at a glance — your 5-hour session limit and your 7-day weekly limit — with reset timers, automatic OAuth-token refresh, and a history of recent checks.
 
-Now **cross-platform** (Windows, macOS, Linux) on **.NET 8 + Avalonia**.
+Now **cross-platform** (Windows, macOS, Linux) on **.NET 10 + Avalonia**.
 
 ## The tray icon
 
@@ -26,7 +26,7 @@ Lighter when usage is low, darker as it approaches the limit (with a floor so it
 
 ## Install / build
 
-Requires the **[.NET 8 SDK](https://dotnet.microsoft.com/download)** to build. The output is a self-contained single executable — your users don't need to install anything.
+Requires the **[.NET 10 SDK](https://dotnet.microsoft.com/download)** to build. The output is a self-contained single executable — your users don't need to install anything.
 
 ```bash
 # Windows (PowerShell)

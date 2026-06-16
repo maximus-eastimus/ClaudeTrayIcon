@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Cross-platform build helper (macOS/Linux). Requires the .NET 8 SDK:
+# Cross-platform build helper (macOS/Linux). Requires the .NET 10 SDK:
 #   https://dotnet.microsoft.com/download
 # Usage: ./build.sh [rid]
 #   macOS Apple Silicon : osx-arm64   (default)
