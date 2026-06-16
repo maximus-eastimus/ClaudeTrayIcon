@@ -10,7 +10,8 @@
     <RootNamespace>ClaudeTrayIcon</RootNamespace>
     <!-- Avalonia needs an app host; keep these for trimming/single-file friendliness -->
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
-    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Win32 manifest only applies to Windows builds; ignored on macOS/Linux RIDs -->
+    <ApplicationManifest Condition="$(RuntimeIdentifier.StartsWith('win'))">app.manifest</ApplicationManifest>
   </PropertyGroup>
 
   <ItemGroup>
