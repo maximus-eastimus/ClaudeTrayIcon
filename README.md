@@ -67,7 +67,7 @@ App state (history, logs, first-run marker) lives in:
 
 ## Platform status / notes
 - **Windows** — done. Right-click menu verified working (it's the native WinForms `NotifyIcon`).
-- **Linux** — built (GTK backend). Needs GTK present at runtime.
+- **Linux** — built (GTK backend), but **not yet runtime-verified**. Needs GTK at runtime. Note: the GTK tray uses the legacy `StatusIcon` API, so on **GNOME** (Ubuntu's default) the icon won't show without the *"AppIndicator and KStatusNotifierItem Support"* extension; it works out of the box on KDE/XFCE/MATE/Cinnamon.
 - **macOS** — in progress. Needs the Eto macOS backend wired up and a Mac to verify; the credential read/write already targets the macOS **Keychain** (item `Claude Code-credentials`, with `~/.claude/.credentials.json` as a fallback).
 - The **session % / weekly %** come only from the subscription's OAuth token — an Anthropic API key cannot provide them (it meters the separate pay-as-you-go developer API).
 
