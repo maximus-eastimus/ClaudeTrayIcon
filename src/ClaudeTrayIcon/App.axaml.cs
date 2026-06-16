@@ -1,15 +1,15 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Markup.Xaml;
 
 namespace ClaudeTrayIcon
 {
-    public class App : Application
+    public partial class App : Application
     {
         private TrayService? _tray;
 
-        // No XAML — this is a tray-only app with no windows.
-        public override void Initialize() { }
+        public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
         public override void OnFrameworkInitializationCompleted()
         {
@@ -17,7 +17,12 @@ namespace ClaudeTrayIcon
             {
                 // Tray app: never auto-exit just because no window is open.
                 desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
-                _tray = new TrayService(this, desktop);
+
+                // Use the TrayIcon declared in App.axaml (required for the native
+                // menu to show on Windows).
+                var tray = TrayIcon.GetIcons(this)?[0];
+                if (tray != null)
+                    _tray = new TrayService(desktop, tray);
             }
             base.OnFrameworkInitializationCompleted();
         }

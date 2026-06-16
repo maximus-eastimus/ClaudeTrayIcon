@@ -1,0 +1,18 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="ClaudeTrayIcon.App">
+  <!-- The TrayIcon + NativeMenu MUST be declared in XAML: on Windows the native
+       tray menu does not show when the TrayIcon is created purely in code.
+       The menu items below are placeholders; TrayService repopulates them. -->
+  <TrayIcon.Icons>
+    <TrayIcons>
+      <TrayIcon x:Name="Tray" IsVisible="True" ToolTipText="Claude Usage — loading…">
+        <TrayIcon.Menu>
+          <NativeMenu>
+            <NativeMenuItem Header="Loading…" IsEnabled="False" />
+          </NativeMenu>
+        </TrayIcon.Menu>
+      </TrayIcon>
+    </TrayIcons>
+  </TrayIcon.Icons>
+</Application>

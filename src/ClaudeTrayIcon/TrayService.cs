@@ -77,6 +77,7 @@ namespace ClaudeTrayIcon
 
         private readonly IClassicDesktopStyleApplicationLifetime _desktop;
         private readonly TrayIcon _icon;
+        private readonly NativeMenu _menu;
         private readonly DispatcherTimer _timer;
 
         private readonly string _credPath =
@@ -89,22 +90,16 @@ namespace ClaudeTrayIcon
         private bool _polling;
         private List<HistoryEntry> _history = new();
 
-        public TrayService(Application app, IClassicDesktopStyleApplicationLifetime desktop)
+        public TrayService(IClassicDesktopStyleApplicationLifetime desktop, TrayIcon icon)
         {
             _desktop = desktop;
+            _icon = icon;
+            // Reuse the NativeMenu declared in App.axaml (mutating its Items keeps
+            // the native export intact); fall back to a new one just in case.
+            _menu = icon.Menu ?? new NativeMenu();
+            if (icon.Menu == null) icon.Menu = _menu;
 
             LoadHistory();
-
-            _icon = new TrayIcon
-            {
-                ToolTipText = "Claude Usage — loading…",
-                IsVisible = true
-            };
-            _icon.Clicked += (_, _) => { /* left-click; menu opens via right-click natively */ };
-
-            var icons = new TrayIcons { _icon };
-            TrayIcon.SetIcons(app, icons);
-
             EnsureFirstRunAutostart();
             RefreshUi();
 
@@ -460,7 +455,7 @@ namespace ClaudeTrayIcon
             {
                 try { _icon.Icon = BuildIcon(); } catch { }
                 try { _icon.ToolTipText = BuildTooltip(); } catch { }
-                try { _icon.Menu = BuildMenu(); } catch { }
+                try { PopulateMenu(); } catch { }
             }
             if (Dispatcher.UIThread.CheckAccess()) Update();
             else Dispatcher.UIThread.Post(Update);
@@ -475,28 +470,32 @@ namespace ClaudeTrayIcon
             return _error != null ? "(!) " + t : t;
         }
 
-        private NativeMenu BuildMenu()
+        // Repopulates the existing (XAML-declared) NativeMenu in place. Mutating
+        // Items keeps the native menu export working on Windows; replacing the
+        // whole Menu object does not.
+        private void PopulateMenu()
         {
-            var menu = new NativeMenu();
-            menu.Add(new NativeMenuItem(_last != null ? $"Claude Usage  ({_last.Plan})" : "Claude Usage") { IsEnabled = false });
-            menu.Add(new NativeMenuItemSeparator());
+            var items = _menu.Items;
+            items.Clear();
+            items.Add(new NativeMenuItem(_last != null ? $"Claude Usage  ({_last.Plan})" : "Claude Usage") { IsEnabled = false });
+            items.Add(new NativeMenuItemSeparator());
 
             if (_last != null)
             {
                 if (_last.FiveHour != null)
-                    menu.Add(Info($"Session (5h):  {_last.FiveHour.Utilization:0}%   ·   resets in {_last.FiveHour.ResetText()}"));
+                    items.Add(Info($"Session (5h):  {_last.FiveHour.Utilization:0}%   ·   resets in {_last.FiveHour.ResetText()}"));
                 if (_last.SevenDay != null)
-                    menu.Add(Info($"Week (7d):  {_last.SevenDay.Utilization:0}%   ·   resets in {_last.SevenDay.ResetText()}"));
+                    items.Add(Info($"Week (7d):  {_last.SevenDay.Utilization:0}%   ·   resets in {_last.SevenDay.ResetText()}"));
                 foreach (var m in _last.Models)
-                    menu.Add(Info($"  {m.Key} (7d):  {m.Value.Utilization:0}%   ·   resets in {m.Value.ResetText()}"));
-                if (_last.ExtraText != null) menu.Add(Info("  " + _last.ExtraText));
+                    items.Add(Info($"  {m.Key} (7d):  {m.Value.Utilization:0}%   ·   resets in {m.Value.ResetText()}"));
+                if (_last.ExtraText != null) items.Add(Info("  " + _last.ExtraText));
             }
             else
             {
-                menu.Add(Info(_error ?? "Loading…"));
+                items.Add(Info(_error ?? "Loading…"));
             }
 
-            menu.Add(new NativeMenuItemSeparator());
+            items.Add(new NativeMenuItemSeparator());
 
             string upd = _lastUpdate == default ? "—" : _lastUpdate.ToString("HH:mm:ss");
             var hist = new NativeMenuItem("Last updated: " + upd + (_error != null ? "   (!) " + _error : "")) { Menu = new NativeMenu() };
@@ -504,29 +503,29 @@ namespace ClaudeTrayIcon
             hist.Menu.Add(new NativeMenuItemSeparator());
             if (_history.Count == 0) hist.Menu.Add(Info("(no attempts yet)"));
             else foreach (var h in _history) hist.Menu.Add(Info(h.Line()));
-            menu.Add(hist);
+            items.Add(hist);
 
-            menu.Add(new NativeMenuItemSeparator());
+            items.Add(new NativeMenuItemSeparator());
 
             var refresh = new NativeMenuItem("Refresh now");
             refresh.Click += async (_, _) => await PollAsync();
-            menu.Add(refresh);
+            items.Add(refresh);
 
-            var auto = new NativeMenuItem("Start at login")
+            // IsChecked doesn't render in a Windows tray menu, so also show the
+            // state in the label.
+            var auto = new NativeMenuItem("Start at login" + (IsAutostart() ? "   ✓" : ""))
             {
                 ToggleType = NativeMenuItemToggleType.CheckBox,
                 IsChecked = IsAutostart()
             };
             auto.Click += (_, _) => { SetAutostart(!IsAutostart()); RefreshUi(); };
-            menu.Add(auto);
+            items.Add(auto);
 
-            menu.Add(new NativeMenuItemSeparator());
+            items.Add(new NativeMenuItemSeparator());
 
             var quit = new NativeMenuItem("Quit");
             quit.Click += (_, _) => _desktop.Shutdown();
-            menu.Add(quit);
-
-            return menu;
+            items.Add(quit);
         }
 
         private static NativeMenuItem Info(string text) => new(text) { IsEnabled = false };
