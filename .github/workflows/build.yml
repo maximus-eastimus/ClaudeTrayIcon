@@ -10,15 +10,17 @@ on:
 jobs:
   build:
     name: ${{ matrix.rid }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - rid: win-x64
             tfm: net10.0-windows
+            os: windows-latest     # WinForms backend must build on Windows
           - rid: linux-x64
             tfm: net10.0
+            os: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
