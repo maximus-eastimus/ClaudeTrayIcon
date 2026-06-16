@@ -2,7 +2,7 @@
 
 A lightweight system-tray app that shows your **Claude subscription usage** at a glance — your 5-hour session limit and your 7-day weekly limit — with reset timers, automatic OAuth-token refresh, and a history of recent checks.
 
-Now **cross-platform** (Windows, macOS, Linux) on **.NET 10 + Avalonia**.
+Built on **.NET 10 + [Eto.Forms](https://github.com/picoe/Eto)**, which uses each OS's **native** tray widget — on Windows the real WinForms `NotifyIcon`, on macOS `NSStatusItem`, on Linux GTK — so the menu behaves natively on each platform. **Windows and Linux** builds are available today; **macOS** is in progress (see status below).
 
 ## The tray icon
 
@@ -26,7 +26,7 @@ Lighter when usage is low, darker as it approaches the limit (with a floor so it
 
 ## Download
 
-Grab a ready-to-run build from the **[Releases page](https://github.com/maximus-eastimus/ClaudeTrayIcon/releases/latest)** — pick the zip for your platform (`win-x64`, `osx-arm64`, `linux-x64`), unzip, and run `ClaudeTrayIcon`. Each is a self-contained single file; no .NET install needed. Builds are produced automatically by GitHub Actions.
+Grab a ready-to-run build from the **[Releases page](https://github.com/maximus-eastimus/ClaudeTrayIcon/releases/latest)** — pick the zip for your platform (`win-x64`, `linux-x64`), unzip, and run `ClaudeTrayIcon`. Each is a self-contained single file; no .NET install needed. Builds are produced automatically by GitHub Actions. (macOS build is in progress.)
 
 ## Install / build
 
@@ -36,13 +36,11 @@ Requires the **[.NET 10 SDK](https://dotnet.microsoft.com/download)** to build. 
 # Windows (PowerShell)
 ./build.ps1                  # win-x64
 
-# macOS / Linux
-./build.sh osx-arm64         # Apple Silicon
-./build.sh osx-x64           # Intel Mac
-./build.sh linux-x64         # Linux
+# Linux
+./build.sh linux-x64
 ```
 
-The binary lands in `publish/<rid>/`. You can also just run it during development with `dotnet run --project src/ClaudeTrayIcon`.
+The binary lands in `publish/<rid>/`. During development you can run it directly with `dotnet run --project src/ClaudeTrayIcon -f net10.0-windows` (Windows) or `-f net10.0` (Linux).
 
 It adds itself to login startup on first run (toggle from the menu → **Start at login**):
 - **Windows** — `HKCU\…\Run` registry value
@@ -67,11 +65,12 @@ App state (history, logs, first-run marker) lives in:
 - macOS: `~/Library/Application Support/ClaudeTrayIcon/`
 - Linux: `$XDG_DATA_HOME` (or `~/.local/share`)`/ClaudeTrayIcon/`
 
-## Platform notes / limitations
-- **macOS menu-bar icon** shows in color (not a monochrome "template" image); it still adapts in size.
-- macOS Keychain access uses the `security` CLI; the first read may prompt for Keychain permission.
+## Platform status / notes
+- **Windows** — done. Right-click menu verified working (it's the native WinForms `NotifyIcon`).
+- **Linux** — built (GTK backend). Needs GTK present at runtime.
+- **macOS** — in progress. Needs the Eto macOS backend wired up and a Mac to verify; the credential read/write already targets the macOS **Keychain** (item `Claude Code-credentials`, with `~/.claude/.credentials.json` as a fallback).
 - The **session % / weekly %** come only from the subscription's OAuth token — an Anthropic API key cannot provide them (it meters the separate pay-as-you-go developer API).
 
 ## Legacy Windows-only version
 
-The original ~28 KB **WinForms** build (no .NET SDK needed — compiles with the C# compiler built into Windows) is preserved under [`legacy-windows/`](legacy-windows/). It's Windows-only but has zero build dependencies. The cross-platform Avalonia version under [`src/`](src/) is recommended.
+The original ~28 KB **WinForms** build (no .NET SDK needed — compiles with the C# compiler built into Windows) is preserved under [`legacy-windows/`](legacy-windows/). It's Windows-only but has zero build dependencies.

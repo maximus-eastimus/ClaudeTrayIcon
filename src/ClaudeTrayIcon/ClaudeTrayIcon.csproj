@@ -2,23 +2,26 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFrameworks>net10.0-windows;net10.0</TargetFrameworks>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>disable</ImplicitUsings>
     <AssemblyName>ClaudeTrayIcon</AssemblyName>
     <RootNamespace>ClaudeTrayIcon</RootNamespace>
-    <!-- Avalonia needs an app host; keep these for trimming/single-file friendliness -->
-    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
-    <!-- Win32 manifest only applies to Windows builds; ignored on macOS/Linux RIDs -->
-    <ApplicationManifest Condition="$(RuntimeIdentifier.StartsWith('win'))">app.manifest</ApplicationManifest>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="11.2.3" />
-    <PackageReference Include="Avalonia.Desktop" Version="11.2.3" />
-    <!-- Registry API (used only on Windows, calls are guarded at runtime) -->
-    <PackageReference Include="Microsoft.Win32.Registry" Version="5.0.0" />
+    <PackageReference Include="Eto.Forms" Version="2.8.3" />
+  </ItemGroup>
+
+  <!-- Windows: native WinForms NotifyIcon backend -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0-windows'">
+    <PackageReference Include="Eto.Platform.Windows" Version="2.8.3" />
+  </ItemGroup>
+
+  <!-- macOS / Linux backends (selected at runtime by Platform.Detect) -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <PackageReference Include="Eto.Platform.Gtk" Version="2.8.3" />
   </ItemGroup>
 
 </Project>

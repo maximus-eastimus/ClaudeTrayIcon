@@ -5,9 +5,8 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
-# All targets are published from Linux runners. A self-contained .NET publish
-# can cross-target every RID (win/macOS/linux) from any host, so we avoid the
-# scarce/slow macOS runner queue. Binaries are unsigned (same as before).
+# Eto.Forms multi-targets: net10.0-windows (WinForms backend) for Windows,
+# net10.0 (GTK backend) for Linux. Both are cross-published from Linux runners.
 jobs:
   build:
     name: ${{ matrix.rid }}
@@ -15,7 +14,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rid: [win-x64, osx-arm64, osx-x64, linux-x64]
+        include:
+          - rid: win-x64
+            tfm: net10.0-windows
+          - rid: linux-x64
+            tfm: net10.0
     steps:
       - uses: actions/checkout@v4
 
@@ -26,7 +29,7 @@ jobs:
       - name: Publish self-contained single file
         run: >
           dotnet publish src/ClaudeTrayIcon/ClaudeTrayIcon.csproj
-          -c Release -r ${{ matrix.rid }} --self-contained
+          -f ${{ matrix.tfm }} -c Release -r ${{ matrix.rid }} --self-contained
           -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
           -o publish/${{ matrix.rid }}
 

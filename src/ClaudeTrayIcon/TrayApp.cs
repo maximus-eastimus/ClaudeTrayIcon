@@ -8,13 +8,8 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
-using Avalonia;
-using Avalonia.Controls;
-using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Media;
-using Avalonia.Media.Imaging;
-using Avalonia.Platform;
-using Avalonia.Threading;
+using Eto.Drawing;
+using Eto.Forms;
 
 namespace ClaudeTrayIcon
 {
@@ -60,25 +55,23 @@ namespace ClaudeTrayIcon
             DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() >= (ExpiresAtMs - bufferMs);
     }
 
-    internal sealed class TrayService
+    internal sealed class TrayApp
     {
         private const string UsageUrl = "https://api.anthropic.com/api/oauth/usage";
         private const string TokenUrl = "https://console.anthropic.com/v1/oauth/token";
         private const string ClientId = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"; // public Claude Code client id
-        private const string KeychainService = "Claude Code-credentials";       // macOS keychain item
+        private const string KeychainService = "Claude Code-credentials";
         private const string AutostartId = "ClaudeTrayIcon";
 
-        private static readonly TimeSpan PollInterval = TimeSpan.FromMinutes(5);
-        private static readonly TimeSpan RetryInterval = TimeSpan.FromSeconds(30);
+        private const double PollIntervalSec = 5 * 60;
+        private const double RetryIntervalSec = 30;
         private const long ExpiryBufferMs = 120 * 1000;
         private const int HistoryMax = 10;
 
         private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(20) };
 
-        private readonly IClassicDesktopStyleApplicationLifetime _desktop;
-        private readonly TrayIcon _icon;
-        private readonly NativeMenu _menu;
-        private readonly DispatcherTimer _timer;
+        private readonly TrayIndicator _tray;
+        private readonly UITimer _timer;
 
         private readonly string _credPath =
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", ".credentials.json");
@@ -89,22 +82,19 @@ namespace ClaudeTrayIcon
         private DateTime _refreshBlockedUntil = DateTime.MinValue;
         private bool _polling;
         private List<HistoryEntry> _history = new();
+        private Image? _prevImage;
 
-        public TrayService(IClassicDesktopStyleApplicationLifetime desktop, TrayIcon icon)
+        public TrayApp()
         {
-            _desktop = desktop;
-            _icon = icon;
-            // Reuse the NativeMenu declared in App.axaml (mutating its Items keeps
-            // the native export intact); fall back to a new one just in case.
-            _menu = icon.Menu ?? new NativeMenu();
-            if (icon.Menu == null) icon.Menu = _menu;
-
             LoadHistory();
             EnsureFirstRunAutostart();
-            RefreshUi();
 
-            _timer = new DispatcherTimer { Interval = PollInterval };
-            _timer.Tick += async (_, _) => await PollAsync();
+            _tray = new TrayIndicator { Title = "Claude Usage — loading…" };
+            RefreshUi();
+            _tray.Show();
+
+            _timer = new UITimer { Interval = PollIntervalSec };
+            _timer.Elapsed += async (_, _) => await PollAsync();
             _timer.Start();
 
             _ = PollAsync();
@@ -114,23 +104,11 @@ namespace ClaudeTrayIcon
 
         private async Task PollAsync()
         {
-            if (_polling) return;          // re-entrancy guard (timer + "Refresh now")
+            if (_polling) return;
             _polling = true;
-            try
-            {
-                await DoPollAsync();
-            }
-            catch (Exception ex)
-            {
-                _error = "Update failed: " + ex.Message;
-                AddHistory(false, "error");
-                SetInterval(RetryInterval);
-            }
-            finally
-            {
-                _polling = false;
-                RefreshUi();
-            }
+            try { await DoPollAsync(); }
+            catch (Exception ex) { _error = "Update failed: " + ex.Message; AddHistory(false, "error"); SetInterval(RetryIntervalSec); }
+            finally { _polling = false; RefreshUi(); }
         }
 
         private async Task DoPollAsync()
@@ -140,7 +118,7 @@ namespace ClaudeTrayIcon
             {
                 _error = "Not logged into Claude Code";
                 AddHistory(false, "no login");
-                SetInterval(RetryInterval);
+                SetInterval(RetryIntervalSec);
                 return;
             }
 
@@ -159,13 +137,13 @@ namespace ClaudeTrayIcon
                 _error = null;
                 _lastUpdate = DateTime.Now;
                 AddHistory(true, "200");
-                SetInterval(PollInterval);
+                SetInterval(PollIntervalSec);
             }
             else
             {
                 _error = "API " + status;
                 AddHistory(false, status.ToString());
-                SetInterval(RetryInterval);
+                SetInterval(RetryIntervalSec);
             }
         }
 
@@ -184,7 +162,6 @@ namespace ClaudeTrayIcon
 
         private async Task<Creds> EnsureFreshAsync(Creds current)
         {
-            // Claude Code may have already refreshed it.
             Creds? onDisk = ReadCreds();
             if (onDisk != null && !onDisk.Expired(ExpiryBufferMs))
                 return onDisk;
@@ -215,11 +192,7 @@ namespace ClaudeTrayIcon
                     return c;
                 }
                 string respBody = await resp.Content.ReadAsStringAsync();
-                if (!resp.IsSuccessStatusCode)
-                {
-                    Log("refresh failed " + (int)resp.StatusCode);
-                    return c;
-                }
+                if (!resp.IsSuccessStatusCode) { Log("refresh failed " + (int)resp.StatusCode); return c; }
 
                 using var doc = JsonDocument.Parse(respBody);
                 var root = doc.RootElement;
@@ -227,7 +200,6 @@ namespace ClaudeTrayIcon
                 string? rt = GetStr(root, "refresh_token");
                 double exp = root.TryGetProperty("expires_in", out var e) && e.ValueKind == JsonValueKind.Number ? e.GetDouble() : 0;
 
-                // Guard: only write back a complete, valid response (never corrupts the store).
                 if (string.IsNullOrEmpty(at) || string.IsNullOrEmpty(rt) || exp <= 0)
                 {
                     Log("refresh response missing fields — not writing");
@@ -242,28 +214,17 @@ namespace ClaudeTrayIcon
                 }
                 return c;
             }
-            catch (Exception ex)
-            {
-                Log("refresh exception: " + ex.Message);
-                return c;
-            }
+            catch (Exception ex) { Log("refresh exception: " + ex.Message); return c; }
         }
 
-        private void SetInterval(TimeSpan ts)
-        {
-            if (_timer != null && _timer.Interval != ts) _timer.Interval = ts;
-        }
+        private void SetInterval(double sec) { if (_timer != null && Math.Abs(_timer.Interval - sec) > 0.001) _timer.Interval = sec; }
 
         // ---------- credentials (cross-platform) ----------
 
-        // Reads ~/.claude/.credentials.json, or the macOS Keychain if the file is absent.
         private string? ReadCredsRaw()
         {
-            try
-            {
-                if (File.Exists(_credPath)) return File.ReadAllText(_credPath);
-            }
-            catch { /* fall through */ }
+            try { if (File.Exists(_credPath)) return File.ReadAllText(_credPath); }
+            catch { }
             if (OperatingSystem.IsMacOS()) return KeychainRead();
             return null;
         }
@@ -275,22 +236,19 @@ namespace ClaudeTrayIcon
             try
             {
                 using var doc = JsonDocument.Parse(raw);
-                if (!doc.RootElement.TryGetProperty("claudeAiOauth", out var o) || o.ValueKind != JsonValueKind.Object)
-                    return null;
+                if (!doc.RootElement.TryGetProperty("claudeAiOauth", out var o) || o.ValueKind != JsonValueKind.Object) return null;
                 var c = new Creds
                 {
                     AccessToken = GetStr(o, "accessToken"),
                     RefreshToken = GetStr(o, "refreshToken"),
                     Plan = GetStr(o, "subscriptionType") ?? ""
                 };
-                if (o.TryGetProperty("expiresAt", out var ea) && ea.ValueKind == JsonValueKind.Number)
-                    c.ExpiresAtMs = ea.GetInt64();
+                if (o.TryGetProperty("expiresAt", out var ea) && ea.ValueKind == JsonValueKind.Number) c.ExpiresAtMs = ea.GetInt64();
                 return string.IsNullOrEmpty(c.AccessToken) ? null : c;
             }
             catch { return null; }
         }
 
-        // Rewrites only the three token fields, preserving every other field.
         private bool WriteBackTokens(string accessToken, string refreshToken, long expiresAtMs)
         {
             try
@@ -313,18 +271,11 @@ namespace ClaudeTrayIcon
                     catch { File.Copy(tmp, _credPath, true); File.Delete(tmp); }
                     return true;
                 }
-                if (OperatingSystem.IsMacOS())
-                    return KeychainWrite(outJson);
+                if (OperatingSystem.IsMacOS()) return KeychainWrite(outJson);
                 return false;
             }
-            catch (Exception ex)
-            {
-                Log("write-back failed: " + ex.Message);
-                return false;
-            }
+            catch (Exception ex) { Log("write-back failed: " + ex.Message); return false; }
         }
-
-        // ---------- macOS Keychain helpers ----------
 
         private static string? KeychainRead()
         {
@@ -336,22 +287,17 @@ namespace ClaudeTrayIcon
         {
             string? acct = KeychainAccount();
             if (acct == null) return false;
-            var (code, _, _) = Run("security", new[]
-            {
-                "add-generic-password", "-U", "-a", acct, "-s", KeychainService, "-w", json
-            });
+            var (code, _, _) = Run("security", new[] { "add-generic-password", "-U", "-a", acct, "-s", KeychainService, "-w", json });
             return code == 0;
         }
 
         private static string? KeychainAccount()
         {
-            // Attributes are printed to stdout; the account is the `"acct"...="value"` line.
             var (code, outp, _) = Run("security", new[] { "find-generic-password", "-s", KeychainService });
             if (code != 0) return null;
             foreach (var line in outp.Split('\n'))
             {
-                int i = line.IndexOf("\"acct\"", StringComparison.Ordinal);
-                if (i < 0) continue;
+                if (line.IndexOf("\"acct\"", StringComparison.Ordinal) < 0) continue;
                 int q = line.IndexOf('"', line.IndexOf('=') + 1);
                 int q2 = q >= 0 ? line.IndexOf('"', q + 1) : -1;
                 if (q >= 0 && q2 > q) return line.Substring(q + 1, q2 - q - 1);
@@ -453,12 +399,19 @@ namespace ClaudeTrayIcon
         {
             void Update()
             {
-                try { _icon.Icon = BuildIcon(); } catch { }
-                try { _icon.ToolTipText = BuildTooltip(); } catch { }
-                try { PopulateMenu(); } catch { }
+                try
+                {
+                    var img = BuildIcon();
+                    _tray.Image = img;
+                    _prevImage?.Dispose();
+                    _prevImage = img;
+                }
+                catch { }
+                try { _tray.Title = Truncate(BuildTooltip(), 63); } catch { }
+                try { _tray.Menu = BuildMenu(); } catch { }
             }
-            if (Dispatcher.UIThread.CheckAccess()) Update();
-            else Dispatcher.UIThread.Post(Update);
+            if (Application.Instance != null) Application.Instance.Invoke(Update);
+            else Update();
         }
 
         private string BuildTooltip()
@@ -470,108 +423,91 @@ namespace ClaudeTrayIcon
             return _error != null ? "(!) " + t : t;
         }
 
-        // Repopulates the existing (XAML-declared) NativeMenu in place. Mutating
-        // Items keeps the native menu export working on Windows; replacing the
-        // whole Menu object does not.
-        private void PopulateMenu()
+        private static string Truncate(string s, int max) =>
+            string.IsNullOrEmpty(s) || s.Length <= max ? s : s.Substring(0, max);
+
+        private ContextMenu BuildMenu()
         {
-            var items = _menu.Items;
-            items.Clear();
-            items.Add(new NativeMenuItem(_last != null ? $"Claude Usage  ({_last.Plan})" : "Claude Usage") { IsEnabled = false });
-            items.Add(new NativeMenuItemSeparator());
+            var menu = new ContextMenu();
+            menu.Items.Add(Dis(_last != null ? $"Claude Usage  ({_last.Plan})" : "Claude Usage"));
+            menu.Items.Add(new SeparatorMenuItem());
 
             if (_last != null)
             {
-                if (_last.FiveHour != null)
-                    items.Add(Info($"Session (5h):  {_last.FiveHour.Utilization:0}%   ·   resets in {_last.FiveHour.ResetText()}"));
-                if (_last.SevenDay != null)
-                    items.Add(Info($"Week (7d):  {_last.SevenDay.Utilization:0}%   ·   resets in {_last.SevenDay.ResetText()}"));
-                foreach (var m in _last.Models)
-                    items.Add(Info($"  {m.Key} (7d):  {m.Value.Utilization:0}%   ·   resets in {m.Value.ResetText()}"));
-                if (_last.ExtraText != null) items.Add(Info("  " + _last.ExtraText));
+                if (_last.FiveHour != null) menu.Items.Add(Dis($"Session (5h):  {_last.FiveHour.Utilization:0}%   ·   resets in {_last.FiveHour.ResetText()}"));
+                if (_last.SevenDay != null) menu.Items.Add(Dis($"Week (7d):  {_last.SevenDay.Utilization:0}%   ·   resets in {_last.SevenDay.ResetText()}"));
+                foreach (var m in _last.Models) menu.Items.Add(Dis($"  {m.Key} (7d):  {m.Value.Utilization:0}%   ·   resets in {m.Value.ResetText()}"));
+                if (_last.ExtraText != null) menu.Items.Add(Dis("  " + _last.ExtraText));
             }
-            else
-            {
-                items.Add(Info(_error ?? "Loading…"));
-            }
+            else menu.Items.Add(Dis(_error ?? "Loading…"));
 
-            items.Add(new NativeMenuItemSeparator());
+            menu.Items.Add(new SeparatorMenuItem());
 
             string upd = _lastUpdate == default ? "—" : _lastUpdate.ToString("HH:mm:ss");
-            var hist = new NativeMenuItem("Last updated: " + upd + (_error != null ? "   (!) " + _error : "")) { Menu = new NativeMenu() };
-            hist.Menu.Add(Info("Recent attempts (newest first):"));
-            hist.Menu.Add(new NativeMenuItemSeparator());
-            if (_history.Count == 0) hist.Menu.Add(Info("(no attempts yet)"));
-            else foreach (var h in _history) hist.Menu.Add(Info(h.Line()));
-            items.Add(hist);
+            var hist = new ButtonMenuItem { Text = "Last updated: " + upd + (_error != null ? "   (!) " + _error : "") };
+            hist.Items.Add(Dis("Recent attempts (newest first):"));
+            if (_history.Count == 0) hist.Items.Add(Dis("(no attempts yet)"));
+            else foreach (var h in _history) hist.Items.Add(Dis(h.Line()));
+            menu.Items.Add(hist);
 
-            items.Add(new NativeMenuItemSeparator());
+            menu.Items.Add(new SeparatorMenuItem());
 
-            var refresh = new NativeMenuItem("Refresh now");
+            var refresh = new ButtonMenuItem { Text = "Refresh now" };
             refresh.Click += async (_, _) => await PollAsync();
-            items.Add(refresh);
+            menu.Items.Add(refresh);
 
-            // IsChecked doesn't render in a Windows tray menu, so also show the
-            // state in the label.
-            var auto = new NativeMenuItem("Start at login" + (IsAutostart() ? "   ✓" : ""))
-            {
-                ToggleType = NativeMenuItemToggleType.CheckBox,
-                IsChecked = IsAutostart()
-            };
-            auto.Click += (_, _) => { SetAutostart(!IsAutostart()); RefreshUi(); };
-            items.Add(auto);
+            var auto = new CheckMenuItem { Text = "Start at login", Checked = IsAutostart() };
+            auto.CheckedChanged += (_, _) => SetAutostart(auto.Checked);
+            menu.Items.Add(auto);
 
-            items.Add(new NativeMenuItemSeparator());
+            menu.Items.Add(new SeparatorMenuItem());
 
-            var quit = new NativeMenuItem("Quit");
-            quit.Click += (_, _) => _desktop.Shutdown();
-            items.Add(quit);
+            var quit = new ButtonMenuItem { Text = "Quit" };
+            quit.Click += (_, _) => Application.Instance.Quit();
+            menu.Items.Add(quit);
+
+            return menu;
         }
 
-        private static NativeMenuItem Info(string text) => new(text) { IsEnabled = false };
+        private static ButtonMenuItem Dis(string text) => new() { Text = text, Enabled = false };
 
-        // ---------- icon rendering (Avalonia / Skia) ----------
+        // ---------- icon rendering ----------
 
-        private WindowIcon BuildIcon()
+        private Image BuildIcon()
         {
-            const int sz = 64;
+            const int sz = 32;
             double sPct = _last?.FiveHour?.Utilization ?? 0;
             double wPct = _last?.SevenDay?.Utilization ?? 0;
 
-            var rtb = new RenderTargetBitmap(new PixelSize(sz, sz), new Vector(96, 96));
-            using (var ctx = rtb.CreateDrawingContext())
+            var bmp = new Bitmap(sz, sz, PixelFormat.Format32bppRgba);
+            using (var g = new Graphics(bmp))
             {
-                int gap = 4;
+                g.Clear(Colors.Transparent);
+                int gap = 2;
                 int leftW = (sz - gap) / 2;
                 int rightX = leftW + gap;
                 int rightW = sz - rightX;
-                DrawBar(ctx, 0, 0, leftW, sz, sPct, 212);   // session = blue
-                DrawBar(ctx, rightX, 0, rightW, sz, wPct, 140); // week = green
-                if (_error != null && _last == null)
-                    ctx.DrawRectangle(new SolidColorBrush(Color.FromArgb(220, 200, 60, 60)), null, new Rect(sz - 12, 0, 12, 12));
+                DrawBar(g, 0, 0, leftW, sz, sPct, 212);   // session = blue
+                DrawBar(g, rightX, 0, rightW, sz, wPct, 140); // week = green
             }
-
-            using var ms = new MemoryStream();
-            rtb.Save(ms);
-            ms.Position = 0;
-            return new WindowIcon(ms);
+            return bmp;
         }
 
-        private static void DrawBar(DrawingContext ctx, int x, int y, int w, int h, double pct, double hue)
+        private static void DrawBar(Graphics g, int x, int y, int w, int h, double pct, double hue)
         {
             if (w <= 0) return;
-            ctx.DrawRectangle(new SolidColorBrush(Color.FromArgb(70, 130, 130, 130)), null, new Rect(x, y, w, h));
+            g.FillRectangle(new Color(0.51f, 0.51f, 0.51f, 0.275f), x, y, w, h);
             double frac = Math.Clamp(pct, 0, 100) / 100.0;
             int fillH = (int)Math.Round(frac * h);
             if (fillH > 0)
             {
-                double l = 0.82 - frac * 0.37; // lighter when low, darker when high
-                ctx.DrawRectangle(new SolidColorBrush(FromHsl(hue, 0.70, l)), null, new Rect(x, y + (h - fillH), w, fillH));
+                double l = 0.82 - frac * 0.37;
+                g.FillRectangle(Hsl(hue, 0.70, l), x, y + (h - fillH), w, fillH);
             }
-            ctx.DrawRectangle(null, new Pen(new SolidColorBrush(Color.FromArgb(170, 165, 165, 165)), 2), new Rect(x + 1, y + 1, w - 2, h - 2));
+            g.DrawRectangle(new Pen(new Color(0.65f, 0.65f, 0.65f, 0.67f), 1), x, y, w - 1, h - 1);
         }
 
-        private static Color FromHsl(double h, double s, double l)
+        private static Color Hsl(double h, double s, double l)
         {
             double c = (1 - Math.Abs(2 * l - 1)) * s;
             double x = c * (1 - Math.Abs((h / 60.0) % 2 - 1));
@@ -583,13 +519,12 @@ namespace ClaudeTrayIcon
             else if (h < 240) { r = 0; g = x; b = c; }
             else if (h < 300) { r = x; g = 0; b = c; }
             else { r = c; g = 0; b = x; }
-            return Color.FromArgb(255, (byte)Math.Round((r + m) * 255), (byte)Math.Round((g + m) * 255), (byte)Math.Round((b + m) * 255));
+            return new Color((float)(r + m), (float)(g + m), (float)(b + m));
         }
 
         // ---------- autostart (per-OS) ----------
 
-        private static string ExePath() =>
-            Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName ?? "";
+        private static string ExePath() => Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName ?? "";
 
         private void EnsureFirstRunAutostart()
         {
@@ -605,7 +540,6 @@ namespace ClaudeTrayIcon
 
         private static string MacPlistPath() =>
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library", "LaunchAgents", "com.claudetrayicon.plist");
-
         private static string LinuxDesktopPath() =>
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config", "autostart", "claudetrayicon.desktop");
 
@@ -653,15 +587,13 @@ namespace ClaudeTrayIcon
                     }
                     else if (File.Exists(p)) File.Delete(p);
                 }
-                else // Linux
+                else
                 {
                     string p = LinuxDesktopPath();
                     if (on)
                     {
                         Directory.CreateDirectory(Path.GetDirectoryName(p)!);
-                        File.WriteAllText(p,
-                            "[Desktop Entry]\nType=Application\nName=Claude Tray Icon\n" +
-                            "Exec=" + exe + "\nX-GNOME-Autostart-enabled=true\nTerminal=false\n");
+                        File.WriteAllText(p, "[Desktop Entry]\nType=Application\nName=Claude Tray Icon\nExec=" + exe + "\nX-GNOME-Autostart-enabled=true\nTerminal=false\n");
                     }
                     else if (File.Exists(p)) File.Delete(p);
                 }
@@ -669,19 +601,11 @@ namespace ClaudeTrayIcon
             catch { }
         }
 
-        // ---------- process helper ----------
-
         private static (int code, string stdout, string stderr) Run(string file, string[] args)
         {
             try
             {
-                var psi = new ProcessStartInfo(file)
-                {
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                };
+                var psi = new ProcessStartInfo(file) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
                 foreach (var a in args) psi.ArgumentList.Add(a);
                 using var p = Process.Start(psi);
                 if (p == null) return (-1, "", "");
