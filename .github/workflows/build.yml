@@ -5,22 +5,17 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+# All targets are published from Linux runners. A self-contained .NET publish
+# can cross-target every RID (win/macOS/linux) from any host, so we avoid the
+# scarce/slow macOS runner queue. Binaries are unsigned (same as before).
 jobs:
   build:
     name: ${{ matrix.rid }}
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: windows-latest
-            rid: win-x64
-          - os: macos-latest
-            rid: osx-arm64
-          - os: macos-13
-            rid: osx-x64
-          - os: ubuntu-latest
-            rid: linux-x64
-    runs-on: ${{ matrix.os }}
+        rid: [win-x64, osx-arm64, osx-x64, linux-x64]
     steps:
       - uses: actions/checkout@v4
 
