@@ -24,6 +24,10 @@ Lighter when usage is low, darker as it approaches the limit (with a floor so it
 
 > Native OS menus don't support per-item text color cross-platform, so success/failure is shown with 🟢/🔴 markers instead of green/red text.
 
+## Download
+
+Grab a ready-to-run build from the **[Releases page](https://github.com/maximus-eastimus/ClaudeTrayIcon/releases/latest)** — pick the zip for your platform (`win-x64`, `osx-arm64`, `linux-x64`), unzip, and run `ClaudeTrayIcon`. Each is a self-contained single file; no .NET install needed. Builds are produced automatically by GitHub Actions.
+
 ## Install / build
 
 Requires the **[.NET 10 SDK](https://dotnet.microsoft.com/download)** to build. The output is a self-contained single executable — your users don't need to install anything.
