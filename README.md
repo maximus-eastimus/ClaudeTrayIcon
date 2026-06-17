@@ -67,7 +67,7 @@ App state (history, logs, first-run marker) lives in:
 
 ## Platform status / notes
 - **Windows** — done. Right-click menu verified working (it's the native WinForms `NotifyIcon`).
-- **Linux** — built (GTK backend), but **not yet runtime-verified**. Needs GTK at runtime. Note: the GTK tray uses the legacy `StatusIcon` API, so on **GNOME** (Ubuntu's default) the icon won't show without the *"AppIndicator and KStatusNotifierItem Support"* extension; it works out of the box on KDE/XFCE/MATE/Cinnamon.
+- **Linux** — verified launching and polling on **Ubuntu 24.04** (headless, under Xvfb): it starts, reads the credentials, and logs a `200`. Runtime dependencies: **`libgtk-3-0`** and **`libappindicator3-1`** (Ayatana AppIndicator) — install with `sudo apt install libgtk-3-0 libappindicator3-1`. The tray uses **AppIndicator / StatusNotifierItem**, so the icon appears on KDE/XFCE/MATE/Cinnamon out of the box; on **GNOME** (Ubuntu's default) also install the *"AppIndicator and KStatusNotifierItem Support"* GNOME extension. (Only the icon's on-screen rendering is unverified — that needs a desktop with a tray host; the app itself runs.)
 - **macOS** — in progress. Needs the Eto macOS backend wired up and a Mac to verify; the credential read/write already targets the macOS **Keychain** (item `Claude Code-credentials`, with `~/.claude/.credentials.json` as a fallback).
 - The **session % / weekly %** come only from the subscription's OAuth token — an Anthropic API key cannot provide them (it meters the separate pay-as-you-go developer API).
 
