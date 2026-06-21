@@ -19,9 +19,23 @@
     <PackageReference Include="Eto.Platform.Windows" Version="2.8.3" />
   </ItemGroup>
 
-  <!-- macOS / Linux backends (selected at runtime by Platform.Detect) -->
-  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+  <!-- Linux backend (GTK) — referenced only when building on Linux -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0' and $([MSBuild]::IsOSPlatform('Linux'))">
     <PackageReference Include="Eto.Platform.Gtk" Version="2.8.3" />
+  </ItemGroup>
+
+  <!-- macOS backend (native NSStatusItem) — referenced only when building on macOS -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0' and $([MSBuild]::IsOSPlatform('OSX'))">
+    <PackageReference Include="Eto.Platform.Mac64" Version="2.8.3" />
+  </ItemGroup>
+
+  <!-- Mac64's .app bundling needs an explicit RID, plus our Info.plist
+       (real bundle id + LSUIElement so it's a menu-bar accessory, no Dock icon) -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0' and $([MSBuild]::IsOSPlatform('OSX'))">
+    <RuntimeIdentifiers>osx-arm64;osx-x64</RuntimeIdentifiers>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0' and $([MSBuild]::IsOSPlatform('OSX'))">
+    <None Include="Info.plist" />
   </ItemGroup>
 
 </Project>
