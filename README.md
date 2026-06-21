@@ -20,7 +20,9 @@ Lighter when usage is low, darker as it approaches the limit (with a floor so it
 - Session (5h) and Week (7d): % and "resets in …"
 - Per-model weekly usage (Opus / Sonnet / …) when your plan reports it
 - **Last updated** → submenu with the last 10 checks, marked **🟢 success / 🔴 error** with the return code (`200`, `401`, …) and time
-- **Refresh now**, **Start at login** (toggle), **Quit**
+- **Refresh now**, **Show remaining** (toggle), **Start at login** (toggle), **Quit**
+
+> **Show remaining** flips every percentage between how much you've *used* (e.g. `4%`) and how much is *left* (e.g. `96% left`) — in the tooltip, the session/week lines, and the per-model lines. The **tray icon** bars flip too: in remaining mode a *fuller* bar means more headroom left. The colour stays keyed to usage, so the bars still darken as you approach a limit. The choice is saved (in `settings.json` alongside the history/log) and restored on next launch.
 
 > Native OS menus don't support per-item text color cross-platform, so success/failure is shown with 🟢/🔴 markers instead of green/red text.
 
