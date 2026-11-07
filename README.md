@@ -2,7 +2,7 @@
 
 A lightweight system-tray app that shows your **Claude subscription usage** at a glance — your 5-hour session limit and your 7-day weekly limit — with reset timers, automatic OAuth-token refresh, and a history of recent checks.
 
-Built on **.NET 10 + [Eto.Forms](https://github.com/picoe/Eto)**, which uses each OS's **native** tray widget — on Windows the real WinForms `NotifyIcon`, on macOS `NSStatusItem`, on Linux GTK — so the menu behaves natively on each platform. **Windows and Linux** builds are available today; **macOS** is in progress (see status below).
+Built on **.NET 10 + [Eto.Forms](https://github.com/picoe/Eto)**, which uses each OS's **native** tray widget — on Windows the real WinForms `NotifyIcon`, on macOS `NSStatusItem`, on Linux GTK — so the menu behaves natively on each platform. **Windows**, **Linux**, and **macOS** all run today (see status below).
 
 ## The tray icon
 
@@ -26,7 +26,7 @@ Lighter when usage is low, darker as it approaches the limit (with a floor so it
 
 ## Download
 
-Grab a ready-to-run build from the **[Releases page](https://github.com/maximus-eastimus/ClaudeTrayIcon/releases/latest)** — pick the zip for your platform (`win-x64`, `linux-x64`), unzip, and run `ClaudeTrayIcon`. Each is a self-contained single file; no .NET install needed. Builds are produced automatically by GitHub Actions. (macOS build is in progress.)
+Grab a ready-to-run build from the **[Releases page](https://github.com/maximus-eastimus/ClaudeTrayIcon/releases/latest)** — pick the zip for your platform (`win-x64`, `linux-x64`), unzip, and run `ClaudeTrayIcon`. Each is a self-contained single file; no .NET install needed. Builds are produced automatically by GitHub Actions. (macOS isn't on Releases yet — build it locally per the steps below; a CI/release job is the next step.)
 
 ## Install / build
 
@@ -38,9 +38,21 @@ Requires the **[.NET 10 SDK](https://dotnet.microsoft.com/download)** to build. 
 
 # Linux
 ./build.sh linux-x64
+
+# macOS
+./build.sh osx-arm64         # Apple Silicon (use osx-x64 on Intel)
 ```
 
 The binary lands in `publish/<rid>/`. During development you can run it directly with `dotnet run --project src/ClaudeTrayIcon -f net10.0-windows` (Windows) or `-f net10.0` (Linux).
+
+On **macOS** the build produces a native `.app` bundle. Eto's Mac backend wraps the app in that bundle, so `dotnet run` can't launch it directly — build and `open` it instead:
+
+```bash
+dotnet build src/ClaudeTrayIcon/ClaudeTrayIcon.csproj -f net10.0 -r osx-arm64
+open src/ClaudeTrayIcon/bin/Debug/net10.0/osx-arm64/ClaudeTrayIcon.app
+```
+
+A full `./build.sh osx-arm64` produces the self-contained `publish/osx-arm64/ClaudeTrayIcon.app`. The build host's OS selects the Eto backend: building on macOS pulls the native Mac backend, building on Linux pulls GTK.
 
 It adds itself to login startup on first run (toggle from the menu → **Start at login**):
 - **Windows** — `HKCU\…\Run` registry value
@@ -68,7 +80,7 @@ App state (history, logs, first-run marker) lives in:
 ## Platform status / notes
 - **Windows** — done. Right-click menu verified working (it's the native WinForms `NotifyIcon`).
 - **Linux** — verified launching and polling on **Ubuntu 24.04** (headless, under Xvfb): it starts, reads the credentials, and logs a `200`. Runtime dependencies: **`libgtk-3-0`** and **`libappindicator3-1`** (Ayatana AppIndicator) — install with `sudo apt install libgtk-3-0 libappindicator3-1`. The tray uses **AppIndicator / StatusNotifierItem**, so the icon appears on KDE/XFCE/MATE/Cinnamon out of the box; on **GNOME** (Ubuntu's default) also install the *"AppIndicator and KStatusNotifierItem Support"* GNOME extension. (Only the icon's on-screen rendering is unverified — that needs a desktop with a tray host; the app itself runs.)
-- **macOS** — in progress. Needs the Eto macOS backend wired up and a Mac to verify; the credential read/write already targets the macOS **Keychain** (item `Claude Code-credentials`, with `~/.claude/.credentials.json` as a fallback).
+- **macOS** — working. Verified on Apple Silicon (macOS, `osx-arm64`): the native `NSStatusItem` icon renders, the right-click menu shows live session/week/per-model usage with reset timers, credentials are read from the **Keychain** (item `Claude Code-credentials`, with `~/.claude/.credentials.json` as a fallback), the OAuth token self-refreshes and writes back, and **Start at login** installs a `LaunchAgent`. The app is a menu-bar accessory (`LSUIElement`) — no Dock icon, never steals focus. The Eto Mac backend is `Eto.Platform.Mac64` (MonoMac); the self-contained `.app` embeds the .NET runtime, so end users need nothing installed. (Intel `osx-x64` is configured but not yet run-tested. The `build.sh` `.app` currently contains a redundant nested copy of itself — cosmetic, from `dotnet publish` + Eto's bundler; a packaging refinement for the CI/release step.)
 - The **session % / weekly %** come only from the subscription's OAuth token — an Anthropic API key cannot provide them (it meters the separate pay-as-you-go developer API).
 
 ## Legacy Windows-only version
