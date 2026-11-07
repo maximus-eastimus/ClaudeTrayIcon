@@ -85,10 +85,12 @@ namespace ClaudeTrayIcon
         private bool _polling;
         private List<HistoryEntry> _history = new();
         private Image? _prevImage;
+        private bool _showRemaining;
 
         public TrayApp()
         {
             LoadHistory();
+            LoadSettings();
             EnsureFirstRunAutostart();
 
             _tray = new TrayIndicator { Title = "Claude Usage — loading…" };
@@ -351,6 +353,28 @@ namespace ClaudeTrayIcon
             catch { }
         }
 
+        // ---------- settings ----------
+
+        private sealed class Settings { public bool ShowRemaining { get; set; } }
+
+        private void LoadSettings()
+        {
+            try
+            {
+                string p = Path.Combine(DataDir(), "settings.json");
+                if (!File.Exists(p)) return;
+                var s = JsonSerializer.Deserialize<Settings>(File.ReadAllText(p));
+                if (s != null) _showRemaining = s.ShowRemaining;
+            }
+            catch { }
+        }
+
+        private void SaveSettings()
+        {
+            try { File.WriteAllText(Path.Combine(DataDir(), "settings.json"), JsonSerializer.Serialize(new Settings { ShowRemaining = _showRemaining })); }
+            catch { }
+        }
+
         // ---------- parsing ----------
 
         private static string? GetStr(JsonElement e, string name) =>
@@ -421,12 +445,16 @@ namespace ClaudeTrayIcon
             if (_last == null) return _error ?? "Claude Usage — loading…";
             double s = _last.FiveHour?.Utilization ?? 0, w = _last.SevenDay?.Utilization ?? 0;
             string sr = _last.FiveHour?.ResetText() ?? "n/a", wr = _last.SevenDay?.ResetText() ?? "n/a";
-            string t = $"Session {s:0}% · {sr}   Week {w:0}% · {wr}";
+            string t = $"Session {FmtPct(s)} · {sr}   Week {FmtPct(w)} · {wr}";
             return _error != null ? "(!) " + t : t;
         }
 
         private static string Truncate(string s, int max) =>
             string.IsNullOrEmpty(s) || s.Length <= max ? s : s.Substring(0, max);
+
+        // Format a window's percentage as either usage or remaining, per the toggle.
+        private string FmtPct(double utilization) =>
+            _showRemaining ? $"{Math.Clamp(100 - utilization, 0, 100):0}% left" : $"{utilization:0}%";
 
         private ContextMenu BuildMenu()
         {
@@ -436,9 +464,9 @@ namespace ClaudeTrayIcon
 
             if (_last != null)
             {
-                if (_last.FiveHour != null) menu.Items.Add(Dis($"Session (5h):  {_last.FiveHour.Utilization:0}%   ·   resets in {_last.FiveHour.ResetText()}"));
-                if (_last.SevenDay != null) menu.Items.Add(Dis($"Week (7d):  {_last.SevenDay.Utilization:0}%   ·   resets in {_last.SevenDay.ResetText()}"));
-                foreach (var m in _last.Models) menu.Items.Add(Dis($"  {m.Key} (7d):  {m.Value.Utilization:0}%   ·   resets in {m.Value.ResetText()}"));
+                if (_last.FiveHour != null) menu.Items.Add(Dis($"Session (5h):  {FmtPct(_last.FiveHour.Utilization)}   ·   resets in {_last.FiveHour.ResetText()}"));
+                if (_last.SevenDay != null) menu.Items.Add(Dis($"Week (7d):  {FmtPct(_last.SevenDay.Utilization)}   ·   resets in {_last.SevenDay.ResetText()}"));
+                foreach (var m in _last.Models) menu.Items.Add(Dis($"  {m.Key} (7d):  {FmtPct(m.Value.Utilization)}   ·   resets in {m.Value.ResetText()}"));
                 if (_last.ExtraText != null) menu.Items.Add(Dis("  " + _last.ExtraText));
             }
             else menu.Items.Add(Dis(_error ?? "Loading…"));
@@ -457,6 +485,10 @@ namespace ClaudeTrayIcon
             var refresh = new ButtonMenuItem { Text = "Refresh now" };
             refresh.Click += async (_, _) => await PollAsync();
             menu.Items.Add(refresh);
+
+            var disp = new CheckMenuItem { Text = "Show remaining", Checked = _showRemaining };
+            disp.CheckedChanged += (_, _) => { _showRemaining = disp.Checked; SaveSettings(); RefreshUi(); };
+            menu.Items.Add(disp);
 
             var auto = new CheckMenuItem { Text = "Start at login", Checked = IsAutostart() };
             auto.CheckedChanged += (_, _) => SetAutostart(auto.Checked);
@@ -478,8 +510,8 @@ namespace ClaudeTrayIcon
         private Image BuildIcon()
         {
             const int sz = 32;
-            double sPct = _last?.FiveHour?.Utilization ?? 0;
-            double wPct = _last?.SevenDay?.Utilization ?? 0;
+            double sUtil = _last?.FiveHour?.Utilization ?? 0;
+            double wUtil = _last?.SevenDay?.Utilization ?? 0;
 
             var bmp = new Bitmap(sz, sz, PixelFormat.Format32bppRgba);
             using (var g = new Graphics(bmp))
@@ -489,21 +521,25 @@ namespace ClaudeTrayIcon
                 int leftW = (sz - gap) / 2;
                 int rightX = leftW + gap;
                 int rightW = sz - rightX;
-                DrawBar(g, 0, 0, leftW, sz, sPct, 212);   // session = blue
-                DrawBar(g, rightX, 0, rightW, sz, wPct, 140); // week = green
+                DrawBar(g, 0, 0, leftW, sz, FillFrac(sUtil), UsedFrac(sUtil), 212);   // session = blue
+                DrawBar(g, rightX, 0, rightW, sz, FillFrac(wUtil), UsedFrac(wUtil), 140); // week = green
             }
             return bmp;
         }
 
-        private static void DrawBar(Graphics g, int x, int y, int w, int h, double pct, double hue)
+        // How full to draw the bar (follows the toggle) vs. how to colour it
+        // (always keyed to usage, so the bar darkens as a limit is approached).
+        private static double UsedFrac(double utilization) => Math.Clamp(utilization, 0, 100) / 100.0;
+        private double FillFrac(double utilization) => _showRemaining ? 1 - UsedFrac(utilization) : UsedFrac(utilization);
+
+        private static void DrawBar(Graphics g, int x, int y, int w, int h, double fillFrac, double usedFrac, double hue)
         {
             if (w <= 0) return;
             g.FillRectangle(new Color(0.51f, 0.51f, 0.51f, 0.275f), x, y, w, h);
-            double frac = Math.Clamp(pct, 0, 100) / 100.0;
-            int fillH = (int)Math.Round(frac * h);
+            int fillH = (int)Math.Round(Math.Clamp(fillFrac, 0, 1) * h);
             if (fillH > 0)
             {
-                double l = 0.82 - frac * 0.37;
+                double l = 0.82 - Math.Clamp(usedFrac, 0, 1) * 0.37;
                 g.FillRectangle(Hsl(hue, 0.70, l), x, y + (h - fillH), w, fillH);
             }
             g.DrawRectangle(new Pen(new Color(0.65f, 0.65f, 0.65f, 0.67f), 1), x, y, w - 1, h - 1);
